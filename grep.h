@@ -3,6 +3,9 @@
 #include "color.h"
 #ifdef USE_LIBPCRE1
 #include <pcre.h>
+#ifndef PCRE_NO_UTF8_CHECK
+#define PCRE_NO_UTF8_CHECK 0
+#endif
 #else
 typedef int pcre;
 typedef int pcre_extra;
