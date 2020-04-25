@@ -125,6 +125,9 @@ ifeq ($(uname_S),Darwin)
 		HAVE_GETDELIM = YesPlease
 	endif
 	NO_MEMMEM = YesPlease
+	ifeq ($(shell test `expr "$(uname_R)" : '\([0-9]*\)\.'` -le 12 && echo 1),1)
+		NO_REGEX = YesPlease
+	endif
 	USE_ST_TIMESPEC = YesPlease
 	HAVE_DEV_TTY = YesPlease
 	COMPAT_OBJS += compat/precompose_utf8.o

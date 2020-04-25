@@ -1308,7 +1308,6 @@ ifeq ($(uname_S),Darwin)
 		APPLE_COMMON_CRYPTO = YesPlease
 		COMPAT_CFLAGS += -DAPPLE_COMMON_CRYPTO
 	endif
-	NO_REGEX = YesPlease
 	PTHREAD_LIBS =
 endif
 
