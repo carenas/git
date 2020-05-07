@@ -1,6 +1,16 @@
 name: CI/PR
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+    - mypu
+    - maint-2.7
+  pull_request:
+    branches:
+    - maint-2.7
+    - maint
+    - master
+    - pu
 
 env:
   DEVELOPER: 1
