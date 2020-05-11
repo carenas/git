@@ -1291,6 +1291,9 @@ ifeq (no,$(USE_PARENS_AROUND_GETTEXT_N))
 endif
 endif
 
+# Platform specific configuration should go instead
+# in config.uname.mak, this is just a last pass to
+# make sure package managers are supported
 ifeq ($(uname_S),Darwin)
 	ifndef NO_FINK
 		ifeq ($(shell test -d /sw/lib && echo y),y)
@@ -1309,8 +1312,6 @@ ifeq ($(uname_S),Darwin)
 		APPLE_COMMON_CRYPTO = YesPlease
 		COMPAT_CFLAGS += -DAPPLE_COMMON_CRYPTO
 	endif
-	NO_REGEX = YesPlease
-	PTHREAD_LIBS =
 endif
 
 ifdef NO_LIBGEN_H
