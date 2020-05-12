@@ -125,12 +125,16 @@ ifeq ($(uname_S),Darwin)
 		HAVE_GETDELIM = YesPlease
 	endif
 	NO_MEMMEM = YesPlease
+	ifeq ($(shell test `expr "$(uname_R)" : '\([0-9]*\)\.'` -le 12 && echo 1),1)
+		NO_REGEX = YesPlease
+	endif
 	USE_ST_TIMESPEC = YesPlease
 	HAVE_DEV_TTY = YesPlease
 	COMPAT_OBJS += compat/precompose_utf8.o
 	BASIC_CFLAGS += -DPRECOMPOSE_UNICODE
 	BASIC_CFLAGS += -DPROTECT_HFS_DEFAULT=1
 	HAVE_BSD_SYSCTL = YesPlease
+	PTHREAD_LIBS =
 	FREAD_READS_DIRECTORIES = UnfortunatelyYes
 	HAVE_NS_GET_EXECUTABLE_PATH = YesPlease
 	BASIC_CFLAGS += -I/usr/local/include

@@ -40,7 +40,7 @@ static const char cherry_picked_prefix[] = "(cherry picked from commit ";
 
 GIT_PATH_FUNC(git_path_commit_editmsg, "COMMIT_EDITMSG")
 
-GIT_PATH_FUNC(git_path_seq_dir, "sequencer")
+static GIT_PATH_FUNC(git_path_seq_dir, "sequencer")
 
 static GIT_PATH_FUNC(git_path_todo_file, "sequencer/todo")
 static GIT_PATH_FUNC(git_path_opts_file, "sequencer/opts")
@@ -946,6 +946,8 @@ static int run_git_commit(struct repository *r,
 		argv_array_push(&cmd.args, "--amend");
 	if (opts->gpg_sign)
 		argv_array_pushf(&cmd.args, "-S%s", opts->gpg_sign);
+	else
+		argv_array_push(&cmd.args, "--no-gpg-sign");
 	if (defmsg)
 		argv_array_pushl(&cmd.args, "-F", defmsg, NULL);
 	else if (!(flags & EDIT_MSG))
@@ -1323,7 +1325,7 @@ static int try_to_commit(struct repository *r,
 		return -1;
 
 	if (flags & AMEND_MSG) {
-		const char *exclude_gpgsig[] = { "gpgsig", NULL };
+		const char *exclude_gpgsig[] = { "gpgsig", "gpgsig-sha256", NULL };
 		const char *out_enc = get_commit_output_encoding();
 		const char *message = logmsg_reencode(current_head, NULL,
 						      out_enc);
@@ -1433,9 +1435,19 @@ out:
 	return res;
 }
 
+static int write_rebase_head(struct object_id *oid)
+{
+	if (update_ref("rebase", "REBASE_HEAD", oid,
+		       NULL, REF_NO_DEREF, UPDATE_REFS_MSG_ON_ERR))
+		return error(_("could not update %s"), "REBASE_HEAD");
+
+	return 0;
+}
+
 static int do_commit(struct repository *r,
 		     const char *msg_file, const char *author,
-		     struct replay_opts *opts, unsigned int flags)
+		     struct replay_opts *opts, unsigned int flags,
+		     struct object_id *oid)
 {
 	int res = 1;
 
@@ -1460,8 +1472,12 @@ static int do_commit(struct repository *r,
 			return res;
 		}
 	}
-	if (res == 1)
+	if (res == 1) {
+		if (is_rebase_i(opts) && oid)
+			if (write_rebase_head(oid))
+			    return -1;
 		return run_git_commit(r, msg_file, opts, flags);
+	}
 
 	return res;
 }
@@ -1564,7 +1580,7 @@ static const char *command_to_string(const enum todo_command command)
 
 static char command_to_char(const enum todo_command command)
 {
-	if (command < TODO_COMMENT && todo_command_info[command].c)
+	if (command < TODO_COMMENT)
 		return todo_command_info[command].c;
 	return comment_line_char;
 }
@@ -1929,7 +1945,9 @@ static int do_pick_commit(struct repository *r,
 	 * However, if the merge did not even start, then we don't want to
 	 * write it at all.
 	 */
-	if (command == TODO_PICK && !opts->no_commit && (res == 0 || res == 1) &&
+	if ((command == TODO_PICK || command == TODO_REWORD ||
+	     command == TODO_EDIT) && !opts->no_commit &&
+	    (res == 0 || res == 1) &&
 	    update_ref(NULL, "CHERRY_PICK_HEAD", &commit->object.oid, NULL,
 		       REF_NO_DEREF, UPDATE_REFS_MSG_ON_ERR))
 		res = -1;
@@ -1965,7 +1983,8 @@ static int do_pick_commit(struct repository *r,
 	} /* else allow == 0 and there's nothing special to do */
 	if (!opts->no_commit && !drop_commit) {
 		if (author || command == TODO_REVERT || (flags & AMEND_MSG))
-			res = do_commit(r, msg_file, author, opts, flags);
+			res = do_commit(r, msg_file, author, opts, flags,
+					commit? &commit->object.oid : NULL);
 		else
 			res = error(_("unable to parse commit author"));
 		*check_todo = !!(flags & EDIT_MSG);
@@ -3000,9 +3019,7 @@ static int make_patch(struct repository *r,
 	p = short_commit_name(commit);
 	if (write_message(p, strlen(p), rebase_path_stopped_sha(), 1) < 0)
 		return -1;
-	if (update_ref("rebase", "REBASE_HEAD", &commit->object.oid,
-		       NULL, REF_NO_DEREF, UPDATE_REFS_MSG_ON_ERR))
-		res |= error(_("could not update %s"), "REBASE_HEAD");
+	res |= write_rebase_head(&commit->object.oid);
 
 	strbuf_addf(&buf, "%s/patch", get_dir(opts));
 	memset(&log_tree_opt, 0, sizeof(log_tree_opt));
@@ -3113,7 +3130,7 @@ static int do_exec(struct repository *r, const char *command_line)
 	const char *child_argv[] = { NULL, NULL };
 	int dirty, status;
 
-	fprintf(stderr, "Executing: %s\n", command_line);
+	fprintf(stderr, _("Executing: %s\n"), command_line);
 	child_argv[0] = command_line;
 	argv_array_pushf(&child_env, "GIT_DIR=%s", absolute_path(get_git_dir()));
 	argv_array_pushf(&child_env, "GIT_WORK_TREE=%s",
@@ -3290,6 +3307,7 @@ static int do_reset(struct repository *r,
 	unpack_tree_opts.fn = oneway_merge;
 	unpack_tree_opts.merge = 1;
 	unpack_tree_opts.update = 1;
+	init_checkout_metadata(&unpack_tree_opts.meta, name, &oid, NULL);
 
 	if (repo_read_index_unmerged(r)) {
 		rollback_lock_file(&lock);
@@ -3708,10 +3726,11 @@ static const char *reflog_message(struct replay_opts *opts,
 {
 	va_list ap;
 	static struct strbuf buf = STRBUF_INIT;
+	char *reflog_action = getenv(GIT_REFLOG_ACTION);
 
 	va_start(ap, fmt);
 	strbuf_reset(&buf);
-	strbuf_addstr(&buf, action_name(opts));
+	strbuf_addstr(&buf, reflog_action ? reflog_action : action_name(opts));
 	if (sub_action)
 		strbuf_addf(&buf, " (%s)", sub_action);
 	if (fmt) {
@@ -3799,8 +3818,11 @@ static int pick_commits(struct repository *r,
 			struct replay_opts *opts)
 {
 	int res = 0, reschedule = 0;
+	char *prev_reflog_action;
 
+	/* Note that 0 for 3rd parameter of setenv means set only if not set */
 	setenv(GIT_REFLOG_ACTION, action_name(opts), 0);
+	prev_reflog_action = xstrdup(getenv(GIT_REFLOG_ACTION));
 	if (opts->allow_ff)
 		assert(!(opts->signoff || opts->no_commit ||
 				opts->record_origin || opts->edit));
@@ -3825,7 +3847,7 @@ static int pick_commits(struct repository *r,
 					fclose(f);
 				}
 				if (!opts->quiet)
-					fprintf(stderr, "Rebasing (%d/%d)%s",
+					fprintf(stderr, _("Rebasing (%d/%d)%s"),
 						todo_list->done_nr,
 						todo_list->total_nr,
 						opts->verbose ? "\n" : "\r");
@@ -3845,12 +3867,14 @@ static int pick_commits(struct repository *r,
 		}
 		if (item->command <= TODO_SQUASH) {
 			if (is_rebase_i(opts))
-				setenv("GIT_REFLOG_ACTION", reflog_message(opts,
+				setenv(GIT_REFLOG_ACTION, reflog_message(opts,
 					command_to_string(item->command), NULL),
 					1);
 			res = do_pick_commit(r, item->command, item->commit,
 					     opts, is_final_fixup(todo_list),
 					     &check_todo);
+			if (is_rebase_i(opts))
+				setenv(GIT_REFLOG_ACTION, prev_reflog_action, 1);
 			if (is_rebase_i(opts) && res < 0) {
 				/* Reschedule */
 				advise(_(rescheduled_advice),
@@ -4077,7 +4101,7 @@ cleanup_head_ref:
 			if (!opts->verbose)
 				term_clear_line();
 			fprintf(stderr,
-				"Successfully rebased and updated %s.\n",
+				_("Successfully rebased and updated %s.\n"),
 				head_ref.buf);
 		}
 
@@ -4591,6 +4615,7 @@ static int make_script_with_merges(struct pretty_print_context *pp,
 				   struct rev_info *revs, struct strbuf *out,
 				   unsigned flags)
 {
+	int keep_empty = flags & TODO_LIST_KEEP_EMPTY;
 	int rebase_cousins = flags & TODO_LIST_REBASE_COUSINS;
 	int root_with_onto = flags & TODO_LIST_ROOT_WITH_ONTO;
 	struct strbuf buf = STRBUF_INIT, oneline = STRBUF_INIT;
@@ -4645,6 +4670,8 @@ static int make_script_with_merges(struct pretty_print_context *pp,
 		is_empty = is_original_commit_empty(commit);
 		if (!is_empty && (commit->object.flags & PATCHSAME))
 			continue;
+		if (is_empty && !keep_empty)
+			continue;
 
 		strbuf_reset(&oneline);
 		pretty_print_commit(pp, commit, &oneline);
@@ -4656,6 +4683,9 @@ static int make_script_with_merges(struct pretty_print_context *pp,
 			strbuf_addf(&buf, "%s %s %s", cmd_pick,
 				    oid_to_hex(&commit->object.oid),
 				    oneline.buf);
+			if (is_empty)
+				strbuf_addf(&buf, " %c empty",
+					    comment_line_char);
 
 			FLEX_ALLOC_STR(entry, string, buf.buf);
 			oidcpy(&entry->entry.oid, &commit->object.oid);
@@ -4819,14 +4849,16 @@ int sequencer_make_script(struct repository *r, struct strbuf *out, int argc,
 	struct pretty_print_context pp = {0};
 	struct rev_info revs;
 	struct commit *commit;
+	int keep_empty = flags & TODO_LIST_KEEP_EMPTY;
 	const char *insn = flags & TODO_LIST_ABBREVIATE_CMDS ? "p" : "pick";
 	int rebase_merges = flags & TODO_LIST_REBASE_MERGES;
+	int reapply_cherry_picks = flags & TODO_LIST_REAPPLY_CHERRY_PICKS;
 
 	repo_init_revisions(r, &revs, NULL);
 	revs.verbose_header = 1;
 	if (!rebase_merges)
 		revs.max_parents = 1;
-	revs.cherry_mark = 1;
+	revs.cherry_mark = !reapply_cherry_picks;
 	revs.limited = 1;
 	revs.reverse = 1;
 	revs.right_only = 1;
@@ -4858,9 +4890,13 @@ int sequencer_make_script(struct repository *r, struct strbuf *out, int argc,
 
 		if (!is_empty && (commit->object.flags & PATCHSAME))
 			continue;
+		if (is_empty && !keep_empty)
+			continue;
 		strbuf_addf(out, "%s %s ", insn,
 			    oid_to_hex(&commit->object.oid));
 		pretty_print_commit(&pp, commit, out);
+		if (is_empty)
+			strbuf_addf(out, " %c empty", comment_line_char);
 		strbuf_addch(out, '\n');
 	}
 	return 0;
@@ -4947,6 +4983,8 @@ static void todo_list_to_strbuf(struct repository *r, struct todo_list *todo_lis
 		max = num;
 
 	for (item = todo_list->items, i = 0; i < max; i++, item++) {
+		char cmd;
+
 		/* if the item is not a command write it and continue */
 		if (item->command >= TODO_COMMENT) {
 			strbuf_addf(buf, "%.*s\n", item->arg_len,
@@ -4955,8 +4993,9 @@ static void todo_list_to_strbuf(struct repository *r, struct todo_list *todo_lis
 		}
 
 		/* add command to the buffer */
-		if (flags & TODO_LIST_ABBREVIATE_CMDS)
-			strbuf_addch(buf, command_to_char(item->command));
+		cmd = command_to_char(item->command);
+		if ((flags & TODO_LIST_ABBREVIATE_CMDS) && cmd)
+			strbuf_addch(buf, cmd);
 		else
 			strbuf_addstr(buf, command_to_string(item->command));
 
@@ -5312,6 +5351,27 @@ int todo_list_rearrange_squash(struct todo_list *todo_list)
 	hashmap_free_entries(&subject2item, struct subject2item_entry, entry);
 
 	clear_commit_todo_item(&commit_todo);
+
+	return 0;
+}
+
+int sequencer_determine_whence(struct repository *r, enum commit_whence *whence)
+{
+	if (file_exists(git_path_cherry_pick_head(r))) {
+		struct object_id cherry_pick_head, rebase_head;
+
+		if (file_exists(git_path_seq_dir()))
+			*whence = FROM_CHERRY_PICK_MULTI;
+		if (file_exists(rebase_path()) &&
+		    !get_oid("REBASE_HEAD", &rebase_head) &&
+		    !get_oid("CHERRY_PICK_HEAD", &cherry_pick_head) &&
+		    oideq(&rebase_head, &cherry_pick_head))
+			*whence = FROM_REBASE_PICK;
+		else
+			*whence = FROM_CHERRY_PICK_SINGLE;
+
+		return 1;
+	}
 
 	return 0;
 }
