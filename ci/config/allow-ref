@@ -1,0 +1,9 @@
+#!/bin/sh
+case "$1" in
+refs/heads/gcc-4.8|refs/heads/seen)
+	true
+	 ;;
+*)
+	false
+	;;
+esac
