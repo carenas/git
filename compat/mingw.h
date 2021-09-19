@@ -157,8 +157,6 @@ static inline int sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
 { return 0; }
 static inline pid_t getppid(void)
 { return 1; }
-static inline pid_t getpgid(pid_t pid)
-{ return pid == 0 ? getpid() : pid; }
 static inline pid_t tcgetpgrp(int fd)
 { return getpid(); }
 

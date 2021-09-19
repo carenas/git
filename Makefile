@@ -101,6 +101,8 @@ all::
 #
 # Define NO_MEMMEM if you don't have memmem.
 #
+# Define NO_GETPGID if you don't have getpgid.
+#
 # Define NO_GETPAGESIZE if you don't have getpagesize.
 #
 # Define NO_STRLCPY if you don't have strlcpy.
@@ -1815,6 +1817,10 @@ endif
 ifdef NO_MEMMEM
 	COMPAT_CFLAGS += -DNO_MEMMEM
 	COMPAT_OBJS += compat/memmem.o
+endif
+ifdef NO_GETPGID
+	BASIC_CFLAGS += -DNO_GETPGID
+	COMPAT_OBJS += compat/getpgid.o
 endif
 ifdef NO_GETPAGESIZE
 	COMPAT_CFLAGS += -DNO_GETPAGESIZE
