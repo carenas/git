@@ -1106,7 +1106,7 @@ int in_async(void)
 	return !pthread_equal(main_thread, pthread_self());
 }
 
-static void NORETURN async_exit(int code)
+static void async_exit(int code)
 {
 	pthread_exit((void *)(intptr_t)code);
 }
