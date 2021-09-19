@@ -755,31 +755,11 @@ do
 	'
 done
 
-test_expect_success PIPE 'streaming support for --stdin' '
-	mkfifo in out &&
-	(git check-ignore -n -v --stdin <in >out &) &&
+write_script test.pl "$PERL_PATH" \
+	<"$TEST_DIRECTORY"/t0008/pipe.pl
 
-	# We cannot just "echo >in" because check-ignore would get EOF
-	# after echo exited; instead we open the descriptor in our
-	# shell, and then echo to the fd. We make sure to close it at
-	# the end, so that the subprocess does get EOF and dies
-	# properly.
-	#
-	# Similarly, we must keep "out" open so that check-ignore does
-	# not ever get SIGPIPE trying to write to us. Not only would that
-	# produce incorrect results, but then there would be no writer on the
-	# other end of the pipe, and we would potentially block forever trying
-	# to open it.
-	exec 9>in &&
-	exec 8<out &&
-	test_when_finished "exec 9>&-" &&
-	test_when_finished "exec 8<&-" &&
-	echo >&9 one &&
-	read response <&8 &&
-	echo "$response" | grep "^\.gitignore:1:one	one" &&
-	echo >&9 two &&
-	read response <&8 &&
-	echo "$response" | grep "^::	two"
+test_expect_success PERL 'streaming support for --stdin' '
+	perl test.pl
 '
 
 test_expect_success 'existing file and directory' '
