@@ -757,6 +757,10 @@ void *gitmemmem(const void *haystack, size_t haystacklen,
 		const void *needle, size_t needlelen);
 #endif
 
+#ifdef NO_MEMRCHR
+void *memrchr(const void *s, int c, size_t n);
+#endif
+
 #ifdef OVERRIDE_STRDUP
 #ifdef strdup
 #undef strdup

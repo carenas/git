@@ -1109,6 +1109,12 @@ GIT_CHECK_FUNC(memmem,
 [NO_MEMMEM=YesPlease])
 GIT_CONF_SUBST([NO_MEMMEM])
 #
+# Define NO_MEMRCHR if you don't have memrchr.
+GIT_CHECK_FUNC(memrchr,
+[NO_MEMRCHR=],
+[NO_MEMRCHR=YesPlease])
+GIT_CONF_SUBST([NO_MEMRCHR])
+#
 # Define NO_STRLCPY if you don't have strlcpy.
 GIT_CHECK_FUNC(strlcpy,
 [NO_STRLCPY=],

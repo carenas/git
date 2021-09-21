@@ -397,6 +397,10 @@ if(NOT HAVE_MEMMEM)
 	list(APPEND compat_SOURCES compat/memmem.c)
 endif()
 
+if(NOT HAVE_MEMRCHR)
+	list(APPEND compat_SOURCES compat/memrchr.c)
+endif()
+
 if(NOT WIN32)
 	if(NOT HAVE_UNSETENV)
 		list(APPEND compat_SOURCES compat/unsetenv.c)
