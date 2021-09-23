@@ -589,6 +589,7 @@ ifeq ($(uname_S),NONSTOP_KERNEL)
 	SHELL_PATH = /usr/coreutils/bin/bash
 endif
 ifneq (,$(findstring MINGW,$(uname_S)))
+	uname_S := MINGW
 	pathsep = ;
 	HAVE_ALLOCA_H = YesPlease
 	NO_PREAD = YesPlease
@@ -704,6 +705,8 @@ ifeq ($(uname_S),QNX)
 	NO_STRCASESTR = YesPlease
 	NO_STRLCPY = YesPlease
 endif
+
+export uname_S
 
 vcxproj:
 	# Require clean work tree
