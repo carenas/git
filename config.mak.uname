@@ -425,6 +425,7 @@ ifeq ($(uname_S),Windows)
 	NO_SVN_TESTS = YesPlease
 	RUNTIME_PREFIX = YesPlease
 	HAVE_WPGMPTR = YesWeDo
+	HAVE_PLATFORM_PROCINFO = YesPlease
 	NO_ST_BLOCKS_IN_STRUCT_STAT = YesPlease
 	USE_WIN32_IPC = YesPlease
 	USE_WIN32_MMAP = YesPlease
