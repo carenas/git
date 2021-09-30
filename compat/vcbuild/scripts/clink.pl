@@ -118,6 +118,10 @@ while (@ARGV) {
 		push(@cflags, "-wd4996");
 	} elsif ("$arg" =~ /^-W[a-z]/) {
 		# let's ignore those
+	} elsif ("$arg" =~ /-fno-[a-z]/) {
+		# GNU compiler flags
+	} elsif ("$arg" =~ /^-pedantic$/) {
+		# No equivalent
 	} else {
 		push(@args, $arg);
 	}
