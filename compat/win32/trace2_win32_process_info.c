@@ -79,8 +79,15 @@ static void get_processes(struct json_writer *jw, HANDLE hSnapshot)
 	pid = GetCurrentProcessId();
 	while (find_pid(pid, hSnapshot, &pe32)) {
 		/* Only report parents. Omit self from the JSON output. */
-		if (nr_pids)
+		if (nr_pids) {
+#ifdef _UNICODE
+			char buf[MAX_PATH * 3 + 1];
+			xwcstoutf(buf, pe32.szExeFile, sizeof(buf));
+			jw_array_string(jw, buf);
+#else
 			jw_array_string(jw, pe32.szExeFile);
+#endif
+		}
 
 		/* Check for cycle in snapshot. (Yes, it happened.) */
 		for (k = 0; k < nr_pids; k++)
