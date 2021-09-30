@@ -36,6 +36,7 @@
 #include "help.h"
 #include "commit-reach.h"
 #include "commit-graph.h"
+#include "compat/terminal.h"
 
 static const char * const builtin_commit_usage[] = {
 	N_("git commit [<options>] [--] <pathspec>..."),
@@ -1072,13 +1073,20 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 
 	if (use_editor) {
 		struct strvec env = STRVEC_INIT;
+		DWORD cmode;
+		HANDLE hconout = CreateFileA("CONOUT$", GENERIC_READ | GENERIC_WRITE,
+				FILE_SHARE_READ, NULL, OPEN_EXISTING,
+				FILE_ATTRIBUTE_NORMAL, NULL);
 
 		strvec_pushf(&env, "GIT_INDEX_FILE=%s", index_file);
+		GetConsoleMode(hconout, &cmode);
 		if (launch_editor(git_path_commit_editmsg(), NULL, env.v)) {
 			fprintf(stderr,
 			_("Please supply the message using either -m or -F option.\n"));
 			exit(1);
 		}
+		SetConsoleMode(hconout, cmode);
+		CloseHandle(hconout);
 		strvec_clear(&env);
 	}
 
