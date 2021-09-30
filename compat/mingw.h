@@ -11,6 +11,10 @@ typedef _sigset_t sigset_t;
 #undef _POSIX_THREAD_SAFE_FUNCTIONS
 #endif
 
+/* Do not use W version of standard error functions */
+#undef gai_strerror
+#define gai_strerror gai_strerrorA
+
 int mingw_core_config(const char *var, const char *value, void *cb);
 #define platform_core_config mingw_core_config
 
