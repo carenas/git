@@ -63,7 +63,10 @@ char *git_prompt(const char *prompt, int flags)
 
 		if (git_env_bool("GIT_TERMINAL_PROMPT", 1)) {
 			r = git_terminal_prompt(prompt, flags & PROMPT_ECHO);
-			err = strerror(errno);
+			if (errno)
+				err = strerror(errno);
+			else
+				err = "need interactiviy but not foreground";
 		} else {
 			err = "terminal prompts disabled";
 		}

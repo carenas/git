@@ -130,6 +130,11 @@ void restore_term(void)
 	hconin = hconout = INVALID_HANDLE_VALUE;
 }
 
+static int is_controlling_terminal(int fd)
+{
+	return 1;
+}
+
 int save_term(int full_duplex)
 {
 	hconin = CreateFileA("CONIN$", GENERIC_READ | GENERIC_WRITE,
@@ -256,6 +261,9 @@ char *git_terminal_prompt(const char *prompt, int echo)
 	int r;
 	FILE *input_fh, *output_fh;
 
+	if (!echo && disable_echo())
+		return NULL;
+
 	input_fh = fopen(INPUT_PATH, "r" FORCE_TEXT);
 	if (!input_fh)
 		return NULL;
@@ -266,9 +274,9 @@ char *git_terminal_prompt(const char *prompt, int echo)
 		return NULL;
 	}
 
-	if (!echo && disable_echo()) {
-		fclose(input_fh);
+	if (!is_controlling_terminal(fileno(output_fh))) {
 		fclose(output_fh);
+		fclose(input_fh);
 		return NULL;
 	}
 
