@@ -1,0 +1,4 @@
+editor.rogue::
+	A boolean to indicate you might be using an editor
+	that can't be trusted to clean its terminal state
+	reliably.   Defaults to false.

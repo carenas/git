@@ -3,6 +3,7 @@
 #include "strbuf.h"
 #include "run-command.h"
 #include "sigchain.h"
+#include "compat/terminal.h"
 
 #ifndef DEFAULT_EDITOR
 #define DEFAULT_EDITOR "vi"
@@ -54,6 +55,7 @@ static int launch_specified_editor(const char *editor, const char *path,
 		return error("Terminal is dumb, but EDITOR unset");
 
 	if (strcmp(editor, ":")) {
+		int save_and_restore_term = 0;
 		struct strbuf realpath = STRBUF_INIT;
 		const char *args[] = { editor, NULL, NULL };
 		struct child_process p = CHILD_PROCESS_INIT;
@@ -76,6 +78,13 @@ static int launch_specified_editor(const char *editor, const char *path,
 			fflush(stderr);
 		}
 
+		if (git_config_get_bool("editor.rogue", &save_and_restore_term) == 0)
+		{
+			/* disable unless we are fully interactive */
+			if (save_and_restore_term && !isatty(2))
+				save_and_restore_term = 0;
+		}
+
 		strbuf_realpath(&realpath, path, 1);
 		args[1] = realpath.buf;
 
@@ -83,7 +92,12 @@ static int launch_specified_editor(const char *editor, const char *path,
 		p.env = env;
 		p.use_shell = 1;
 		p.trace2_child_class = "editor";
+		if (save_and_restore_term)
+			save_and_restore_term = !save_term(1);
+
 		if (start_command(&p) < 0) {
+			if (save_and_restore_term)
+				restore_term();
 			strbuf_release(&realpath);
 			return error("unable to start editor '%s'", editor);
 		}
@@ -91,6 +105,8 @@ static int launch_specified_editor(const char *editor, const char *path,
 		sigchain_push(SIGINT, SIG_IGN);
 		sigchain_push(SIGQUIT, SIG_IGN);
 		ret = finish_command(&p);
+		if (save_and_restore_term)
+			restore_term();
 		strbuf_release(&realpath);
 		sig = ret - 128;
 		sigchain_pop(SIGINT);
