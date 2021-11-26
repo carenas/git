@@ -47,8 +47,9 @@ int save_term(int full_duplex)
 	if (term_fd < 0)
 		return -1;
 
-	if (full_duplex && !is_controlling_terminal(term_fd)) {
+	if (!is_controlling_terminal(term_fd)) {
 		close(term_fd);
+		errno = 0;
 		term_fd = -1;
 		return -1;
 	}
