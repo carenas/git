@@ -71,7 +71,8 @@ static int disable_bits(tcflag_t bits)
 		return 0;
 
 error:
-	close(term_fd);
+	if (term_fd != -1)
+		close(term_fd);
 	term_fd = -1;
 	return -1;
 }
