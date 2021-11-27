@@ -339,25 +339,16 @@ static int is_known_escape_sequence(const char *sequence)
 
 int read_key_without_echo(struct strbuf *buf)
 {
-	static int warning_displayed;
 	int ch;
 
-	if (warning_displayed || enable_non_canonical() < 0) {
-		if (!warning_displayed) {
-			warning("reading single keystrokes not supported on "
-				"this platform; reading line instead");
-			warning_displayed = 1;
-		}
-
-		return strbuf_getline(buf, stdin);
-	}
-
 	strbuf_reset(buf);
-	ch = getchar();
-	if (ch == EOF) {
-		restore_term();
+	if (enable_non_canonical() < 0)
 		return EOF;
-	}
+
+	ch = getchar();
+	if (ch == EOF)
+		goto cleanup;
+
 	strbuf_addch(buf, ch);
 
 	if (ch == '\033' /* ESC */) {
@@ -382,14 +373,17 @@ int read_key_without_echo(struct strbuf *buf)
 				break;
 
 			ch = getchar();
-			if (ch == EOF)
-				return 0;
+			if (ch == EOF) {
+				ch = 0;
+				break;
+			}
 			strbuf_addch(buf, ch);
 		}
 	}
 
+cleanup:
 	restore_term();
-	return 0;
+	return ch;
 }
 
 #else
@@ -404,6 +398,11 @@ void restore_term(void)
 {
 }
 
+static int enable_non_canonical(void)
+{
+	return -1;
+}
+
 char *git_terminal_prompt(const char *prompt, int echo)
 {
 	return getpass(prompt);
@@ -411,21 +410,24 @@ char *git_terminal_prompt(const char *prompt, int echo)
 
 int read_key_without_echo(struct strbuf *buf)
 {
-	static int warning_displayed;
-	const char *res;
-
-	if (!warning_displayed) {
-		warning("reading single keystrokes not supported on this "
-			"platform; reading line instead");
-		warning_displayed = 1;
-	}
-
-	res = getpass("");
-	strbuf_reset(buf);
-	if (!res)
-		return EOF;
-	strbuf_addstr(buf, res);
-	return 0;
+	BUG("should never be called if READKEY is not supported");
+	return EOF;
 }
 
 #endif
+
+int terminal_support(enum terminal_mode mode)
+{
+	int ret;
+
+	switch (mode) {
+	case READKEY:
+		ret = (enable_non_canonical() == 0);
+		break;
+	default:
+		BUG("unknown terminal_mode");
+	}
+	restore_term();
+
+	return ret;
+}
