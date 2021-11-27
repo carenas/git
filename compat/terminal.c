@@ -19,6 +19,7 @@ static void restore_term_on_signal(int sig)
 
 #define INPUT_PATH "/dev/tty"
 #define OUTPUT_PATH "/dev/tty"
+#define FORCE_TEXT
 
 static int term_fd = -1;
 static struct termios old_term;
@@ -167,6 +168,7 @@ static int disable_bits(DWORD bits)
 			strvec_push(&cp.args, "");
 		}
 
+		cp.silent_exec_failure = 1;
 		if (run_command(&cp) == 0)
 			return 0;
 
@@ -228,10 +230,6 @@ static int mingw_getchar(void)
 }
 #define getchar mingw_getchar
 
-#endif
-
-#ifndef FORCE_TEXT
-#define FORCE_TEXT
 #endif
 
 char *git_terminal_prompt(const char *prompt, int echo)
