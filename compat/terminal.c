@@ -356,10 +356,9 @@ int read_key_without_echo(struct strbuf *buf)
 
 	strbuf_reset(buf);
 	ch = getchar();
-	if (ch == EOF) {
-		restore_term();
-		return EOF;
-	}
+	if (ch == EOF)
+		goto cleanup;
+
 	strbuf_addch(buf, ch);
 
 	if (ch == '\033' /* ESC */) {
@@ -385,13 +384,16 @@ int read_key_without_echo(struct strbuf *buf)
 
 			ch = getchar();
 			if (ch == EOF)
-				return 0;
+				break;
+
 			strbuf_addch(buf, ch);
 		}
 	}
+	ch = 0;
 
+cleanup:
 	restore_term();
-	return 0;
+	return ch;
 }
 
 #else
