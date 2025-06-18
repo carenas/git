@@ -41,6 +41,8 @@ while (<>) {
 	/^\s*declare\s+/ and err 'arrays/declare not portable';
 	/^\s*[^#]\s*which\s/ and err 'which is not portable (use type)';
 	/\btest\s+[^=]*==/ and err '"test a == b" is not portable (use =)';
+	/\bmkdir(\s+-p)?\s+-p?m\s*[0-7]{1,3}/ and err '"mkdir -m" is unreliable (use mkdir && chmod)';
+	/^[\s;]*mkdir\s+-[^p]/ and err 'mkdir option not portable (use only -p)';
 	/\bwc -l.*"\s*=/ and err '`"$(wc -l)"` is not portable (use test_line_count)';
 	/\bhead\s+-c\b/ and err 'head -c is not portable (use test_copy_bytes BYTES <file >out)';
 	/(?:\$\(seq|^\s*seq\b)/ and err 'seq is not portable (use test_seq)';
