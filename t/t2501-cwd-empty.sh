@@ -222,7 +222,15 @@ test_expect_success '`rm -rf dir` even with only tracked files will remove somet
 	test_path_is_dir a/b
 '
 
-test_expect_success 'git version continues working from a deleted dir' '
+test_lazy_prereq RMDIR_CWD '
+	mkdir -p cwd &&
+	(
+		cd cwd &&
+		rm -rf ../cwd
+	)
+'
+
+test_expect_success RMDIR_CWD 'git version continues working from a deleted dir' '
 	mkdir tmp &&
 	(
 		cd tmp &&
