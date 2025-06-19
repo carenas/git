@@ -358,6 +358,7 @@ ifeq ($(uname_S),NetBSD)
 endif
 ifeq ($(uname_S),AIX)
 	DEFAULT_PAGER = more
+	NO_INITGROUPS = UnfortunatelyYes
 	NO_STRCASESTR = YesPlease
 	NO_MEMMEM = YesPlease
 	NO_MKDTEMP = YesPlease
