@@ -244,8 +244,10 @@ test_expect_success 'force diff with "diff"' '
 	after=$(git rev-parse --short $after) &&
 	echo >.gitattributes "file diff" &&
 	git diff >actual &&
+	nul_to_q <"$TEST_DIRECTORY"/t4020/diff.NUL >diff.Q &&
 	sed -e "s/^index .*/index $before..$after 100644/" \
-		"$TEST_DIRECTORY"/t4020/diff.NUL >expected-diff &&
+		diff.Q >expected-diff.Q &&
+	q_to_nul <expected-diff.Q >expected-diff &&
 	test_cmp expected-diff actual
 '
 
