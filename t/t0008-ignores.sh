@@ -43,7 +43,7 @@ broken_c_unquote () {
 }
 
 broken_c_unquote_verbose () {
-	sed -e 's/	"/	/' -e 's/\\//' -e 's/"$//' "$1" | tr ':\t\n' '\000'
+	sed -e 's/	"/	/' -e 's/\\//' -e 's/"$//' "$1" | tr ':\t\n' '\0\0\0'
 }
 
 stderr_contains () {
