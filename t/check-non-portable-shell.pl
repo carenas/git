@@ -48,6 +48,7 @@ while (<>) {
 	/(?:\$\(seq|^\s*seq\b)/ and err 'seq is not portable (use test_seq)';
 	/\bgrep\b.*--file\b/ and err 'grep --file FILE is not portable (use grep -f FILE)';
 	/\b[ef]grep\b/ and err 'egrep/fgrep obsolescent (use grep -E/-F)';
+	/^[\s;]*grep\s+-[^EFcefiqsv]/ and err 'grep option not portable (use only -E, -F, -[cefiqsv])';
 	/\bexport\s+[A-Za-z0-9_]*=/ and err '"export FOO=bar" is not portable (use FOO=bar && export FOO)';
 	/\blocal\s+[A-Za-z0-9_]*=\$([A-Za-z0-9_{]|[(][^(])/ and
 		err q(quote "$val" in 'local var=$val');

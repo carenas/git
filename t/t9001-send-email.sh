@@ -2829,9 +2829,9 @@ test_expect_success $PREREQ '--compose handles to headers' '
 	To: nobody@example.com,
 	Qedited-to@example.com
 	EOF
-	grep -A1 "^To:" msgtxt1 >msgtxt1.to &&
+	awk "/^To:/ { print; getline; print }" msgtxt1 >msgtxt1.to &&
 	test_cmp expect msgtxt1.to &&
-	grep -A1 "^To:" msgtxt2 >msgtxt2.to &&
+	awk "/^To:/ { print; getline; print }" msgtxt2 >msgtxt2.to &&
 	test_cmp expect msgtxt2.to
 '
 
