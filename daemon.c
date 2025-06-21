@@ -1153,11 +1153,17 @@ static int service_loop(struct socketlist *socklist)
 #endif
 				} ss;
 				socklen_t sslen = sizeof(ss);
-				int incoming = accept(pfd[i].fd, &ss.sa, &sslen);
+				int incoming;
+
+redo:
+				incoming = accept(pfd[i].fd, &ss.sa, &sslen);
 				if (incoming < 0) {
 					switch (errno) {
-					case EAGAIN:
 					case EINTR:
+						check_dead_children();
+						/* fallthrough */
+					case EAGAIN:
+						goto redo;
 					case ECONNABORTED:
 						continue;
 					default:
