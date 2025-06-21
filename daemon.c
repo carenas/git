@@ -850,22 +850,33 @@ static void check_dead_children(void)
 {
 	int status;
 	pid_t pid;
-
+	int even_more_children;
 	struct child **cradle, *blanket;
-	for (cradle = &firstborn; (blanket = *cradle);)
-		if ((pid = waitpid(blanket->cld.pid, &status, WNOHANG)) > 1) {
-			const char *dead = "";
-			if (status)
-				dead = " (with error)";
-			loginfo("[%"PRIuMAX"] Disconnected%s", (uintmax_t)pid, dead);
 
-			/* remove the child */
-			*cradle = blanket->next;
-			live_children--;
-			child_process_clear(&blanket->cld);
-			free(blanket);
-		} else
-			cradle = &blanket->next;
+	do {
+		even_more_children = 0;
+		for (cradle = &firstborn; (blanket = *cradle);) {
+			pid = waitpid(blanket->cld.pid, &status, WNOHANG);
+			if (pid > 1) {
+				const char *dead = "";
+				if (status)
+					dead = " (with error)";
+				loginfo("[%"PRIuMAX"] Disconnected%s",
+					(uintmax_t)pid, dead);
+
+				/* remove the child */
+				*cradle = blanket->next;
+				live_children--;
+				child_process_clear(&blanket->cld);
+				free(blanket);
+			} else {
+				if (pid && errno == EINTR)
+					even_more_children = 1;
+				else
+					cradle = &blanket->next;
+			}
+		}
+	} while (even_more_children);
 }
 
 static struct strvec cld_argv = STRVEC_INIT;
