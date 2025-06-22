@@ -1132,9 +1132,18 @@ static int service_loop(struct socketlist *socklist)
 	signal(SIGCHLD, child_handler);
 
 	for (;;) {
+		sigset_t mask;
+
 		check_dead_children();
 
+#ifdef HAVE_PPOLL
+		sigprocmask(SIG_SETMASK, NULL, &mask);
+		sigdelset(&mask, SIGCHLD);
+		if (ppoll(pfd, socklist->nr, NULL, &mask) < 0) {
+#else
+		(void)mask;
 		if (poll(pfd, socklist->nr, -1) < 0) {
+#endif
 			if (errno != EINTR) {
 				logerror("Poll failed, resuming: %s",
 				      strerror(errno));

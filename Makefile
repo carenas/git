@@ -344,6 +344,9 @@ include shared.mak
 #
 # Define HAVE_GETDELIM if your system has the getdelim() function.
 #
+# Define HAVE_PPOLL if your system has the ppoll() function, and it is
+# required when signals have to be able to interrupt them with EINTR.
+#
 # Define FILENO_IS_A_MACRO if fileno() is a macro, not a real function.
 #
 # Define NEED_ACCESS_ROOT_HANDLER if access() under root may success for X_OK
@@ -2184,6 +2187,10 @@ endif
 
 ifdef HAVE_GETDELIM
 	BASIC_CFLAGS += -DHAVE_GETDELIM
+endif
+
+ifdef HAVE_PPOLL
+	BASIC_CFLAGS += -DHAVE_PPOLL
 endif
 
 ifneq ($(findstring arc4random,$(CSPRNG_METHOD)),)
