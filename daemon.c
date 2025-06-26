@@ -846,10 +846,13 @@ static void kill_some_child(void)
 		}
 }
 
-static void check_dead_children(void)
+volatile int signal_ev;
+
+static int check_dead_children(void)
 {
 	int status;
 	pid_t pid;
+	int expected = signal_ev, count = 0;
 
 	struct child **cradle, *blanket;
 	for (cradle = &firstborn; (blanket = *cradle);)
@@ -864,8 +867,19 @@ static void check_dead_children(void)
 			live_children--;
 			child_process_clear(&blanket->cld);
 			free(blanket);
+			count++;
 		} else
 			cradle = &blanket->next;
+
+	if (count) {
+		if ((count == expected) ||
+		    (count > expected && count <= signal_ev))
+			signal_ev -= count;
+		else
+			signal_ev = 0;
+	}
+
+	return 0;
 }
 
 static struct strvec cld_argv = STRVEC_INIT;
@@ -912,14 +926,31 @@ static void handle(int incoming, struct sockaddr *addr, socklen_t addrlen)
 		add_child(&cld, addr, addrlen);
 }
 
+volatile int signal_pipe[2] = { -1, -1 };
+
 static void child_handler(int signo UNUSED)
 {
+	int saved_errno = errno;
+
+	if (signal_pipe[1] != -1) {
+		ssize_t nr;
+
+		while ((nr = write(signal_pipe[1], &saved_errno, 1)) <= 0) {
+			if (errno == EINTR)
+				continue;
+
+			close(signal_pipe[1]);
+			signal_pipe[0] = signal_pipe[1] = -1;
+			break;
+		}
+	}
+	signal_ev++;
 	/*
-	 * Otherwise empty handler because systemcalls will get interrupted
-	 * upon signal receipt
 	 * SysV needs the handler to be rearmed
 	 */
 	signal(SIGCHLD, child_handler);
+
+	errno = saved_errno;
 }
 
 static int set_reuse_addr(int sockfd)
@@ -1118,32 +1149,142 @@ static void socksetup(struct string_list *listen_addr, int listen_port, struct s
 	}
 }
 
+static int maybe_setup_pipe(volatile int pp[2])
+{
+	if (!pipe((int *)pp)) {
+		for (int i = 0; i < 2; i++) {
+			int flags;
+
+			flags = fcntl(pp[i], F_GETFD, 0);
+			if (flags >= 0)
+				fcntl(pp[i], F_SETFD, flags | FD_CLOEXEC);
+
+			flags = fcntl(pp[i], F_GETFL, 0);
+			if (flags < 0 ||
+			    fcntl(pp[i], F_SETFL, flags | O_NONBLOCK) == -1) {
+				close(pp[0]);
+				close(pp[1]);
+				pp[0] = pp[1] = -1;
+				break;
+			}
+		}
+	}
+	return pp[0];
+}
+
+static int drain_pipe(int fd, int ev)
+{
+	ssize_t nr;
+	size_t scratch;
+	int ret = (fd == -1) ? fd : ev;
+
+	while (fd != -1 && ev) {
+		nr = read(fd, &scratch, sizeof(scratch));
+
+		if (nr > 0)
+			continue;
+		else if (nr < 0) {
+			if (errno == EAGAIN || errno == EWOULDBLOCK)
+				break;
+			else if (errno == EINTR)
+				continue;
+		}
+		ret = -1;
+		break;
+	}
+
+	return ret;
+}
+
+static int handle_signal_pipe(struct pollfd *pfd, unsigned long *pnfds,
+			      int *pnevents)
+{
+	int scratch;
+	int broken_pipe = 0;
+
+	if (pfd->revents & POLLHUP) {
+		broken_pipe = 1;
+
+		close(pfd->fd);
+
+		(*pnevents)--;
+	} else if (pfd->revents & POLLIN) {
+		ssize_t nr;
+
+		while (!broken_pipe && (nr = read(pfd->fd, &scratch, 1)) < 0) {
+			if (errno == EAGAIN || errno == EWOULDBLOCK)
+				break;
+			else if (errno == EINTR)
+				continue;
+
+			broken_pipe = 1;
+		}
+
+		if (*pnevents == 1 && nr > 0)
+			return 1;
+
+		if (broken_pipe)
+			close(pfd->fd);
+
+		(*pnevents)--;
+	} else if (pfd->revents & POLLNVAL) {
+		broken_pipe = 1;
+
+		(*pnevents)--;
+	}
+
+	if (broken_pipe) {
+		pfd->fd = -1;
+		pfd->revents = 0;
+
+		(*pnfds)--;
+	}
+
+	return 0;
+}
+
 static int service_loop(struct socketlist *socklist)
 {
 	struct pollfd *pfd;
+	size_t pi;
+	unsigned long nfds = socklist->nr + 1;
+	int child_ev = 0;
 
-	CALLOC_ARRAY(pfd, socklist->nr);
+	ALLOC_ARRAY(pfd, nfds);
 
-	for (size_t i = 0; i < socklist->nr; i++) {
-		pfd[i].fd = socklist->list[i];
-		pfd[i].events = POLLIN;
+	for (pi = 0; pi < socklist->nr; pi++) {
+		pfd[pi].fd = socklist->list[pi];
+		pfd[pi].events = POLLIN;
 	}
+	pfd[pi].fd = maybe_setup_pipe(signal_pipe);
+	pfd[pi].events = POLLIN | POLLHUP;
 
 	signal(SIGCHLD, child_handler);
 
 	for (;;) {
-		check_dead_children();
+		int nevents;
 
-		if (poll(pfd, socklist->nr, -1) < 0) {
+		if (drain_pipe(pfd[pi].fd, child_ev || signal_ev))
+			child_ev = check_dead_children();
+
+		if ((nevents = poll(pfd, nfds, -1)) <= 0) {
 			if (errno != EINTR) {
 				logerror("Poll failed, resuming: %s",
 				      strerror(errno));
 				sleep(1);
-			}
+			} else
+				child_ev = live_children && signal_ev;
 			continue;
 		}
 
-		for (size_t i = 0; i < socklist->nr; i++) {
+		if (pfd[pi].revents && pfd[pi].fd != -1) {
+			if (handle_signal_pipe(&pfd[pi], &nfds, &nevents)) {
+				child_ev = 1;
+				continue;
+			}
+		}
+
+		for (size_t i = 0; nevents && i < socklist->nr; i++) {
 			if (pfd[i].revents & POLLIN) {
 				union {
 					struct sockaddr sa;
@@ -1165,6 +1306,7 @@ static int service_loop(struct socketlist *socklist)
 					}
 				}
 				handle(incoming, &ss.sa, sslen);
+				nevents--;
 			}
 		}
 	}
