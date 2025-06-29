@@ -213,10 +213,12 @@ static int handle_nonblock(int fd, short poll_events, int err)
 	pfd.events = poll_events;
 
 	/*
-	 * no need to check for errors, here;
+	 * no need to check for errors except for EINTR, here;
 	 * a subsequent read/write will detect unrecoverable errors
 	 */
-	poll(&pfd, 1, -1);
+	while (poll(&pfd, 1, -1) < 0)
+		if (errno == EINTR)
+			continue;
 	return 1;
 }
 
