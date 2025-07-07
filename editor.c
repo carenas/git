@@ -95,7 +95,7 @@ static int launch_specified_editor(const char *editor, const char *path,
 		p.use_shell = 1;
 		p.trace2_child_class = "editor";
 		if (save_and_restore_term)
-			save_and_restore_term = !save_term(1);
+			save_and_restore_term = !save_term(SAVE_TERM_DUPLEX);
 		if (start_command(&p) < 0) {
 			if (save_and_restore_term)
 				restore_term();

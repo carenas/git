@@ -9,6 +9,8 @@
 
 #if defined(HAVE_DEV_TTY) || defined(GIT_WINDOWS_NATIVE)
 
+static int term_fd = -1;
+
 static void restore_term_on_signal(int sig)
 {
 	restore_term();
@@ -22,7 +24,6 @@ static void restore_term_on_signal(int sig)
 #define OUTPUT_PATH "/dev/tty"
 
 static volatile sig_atomic_t term_fd_needs_closing;
-static int term_fd = -1;
 static struct termios old_term;
 
 static const char *background_resume_msg;
@@ -250,7 +251,7 @@ static int getchar_with_timeout(int timeout)
 #define OUTPUT_PATH "CONOUT$"
 #define FORCE_TEXT "t"
 
-static int use_stty = 1;
+static int use_stty = 0;
 static struct string_list stty_restore = STRING_LIST_INIT_DUP;
 static HANDLE hconin = INVALID_HANDLE_VALUE;
 static HANDLE hconout = INVALID_HANDLE_VALUE;
@@ -258,31 +259,26 @@ static DWORD cmode_in, cmode_out;
 
 void restore_term(void)
 {
-	if (use_stty) {
+	if (use_stty && stty_restore.nr) {
 		struct child_process cp = CHILD_PROCESS_INIT;
 
-		if (stty_restore.nr == 0)
-			return;
-
+		cp.silent_exec_failure = 1;
 		strvec_push(&cp.args, "stty");
 		for (size_t i = 0; i < stty_restore.nr; i++)
 			strvec_push(&cp.args, stty_restore.items[i].string);
 		run_command(&cp);
 		string_list_clear(&stty_restore, 0);
-		return;
 	}
 
 	sigchain_pop_common();
 
-	if (hconin == INVALID_HANDLE_VALUE)
-		return;
-
-	SetConsoleMode(hconin, cmode_in);
-	CloseHandle(hconin);
-	if (cmode_out) {
-		assert(hconout != INVALID_HANDLE_VALUE);
+	if (hconout != INVALID_HANDLE_VALUE) {
 		SetConsoleMode(hconout, cmode_out);
 		CloseHandle(hconout);
+	}
+	if (hconin != INVALID_HANDLE_VALUE) {
+		SetConsoleMode(hconin, cmode_in);
+		CloseHandle(hconin);
 	}
 
 	hconin = hconout = INVALID_HANDLE_VALUE;
@@ -296,6 +292,10 @@ int save_term(enum save_term_flags flags)
 	if (hconin == INVALID_HANDLE_VALUE)
 		return -1;
 
+	term_fd = _open_osfhandle((intptr_t)hconin, _O_RDONLY | _O_TEXT);
+	if (term_fd < 0)
+		return -1;
+
 	if (flags & SAVE_TERM_DUPLEX) {
 		hconout = CreateFileA("CONOUT$", GENERIC_READ | GENERIC_WRITE,
 			FILE_SHARE_WRITE, NULL, OPEN_EXISTING,
@@ -307,20 +307,24 @@ int save_term(enum save_term_flags flags)
 	}
 
 	GetConsoleMode(hconin, &cmode_in);
-	use_stty = 0;
 	sigchain_push_common(restore_term_on_signal);
 	return 0;
 error:
-	CloseHandle(hconin);
+	close(term_fd);
+	term_fd = -1;
 	hconin = INVALID_HANDLE_VALUE;
 	return -1;
 }
 
 static int disable_bits(enum save_term_flags flags, DWORD bits)
 {
+	if (save_term(flags) < 0)
+		return -1;
+
 	if (use_stty) {
 		struct child_process cp = CHILD_PROCESS_INIT;
 
+		cp.silent_exec_failure = 1;
 		strvec_push(&cp.args, "stty");
 
 		if (bits & ENABLE_LINE_INPUT) {
@@ -352,9 +356,6 @@ static int disable_bits(enum save_term_flags flags, DWORD bits)
 		/* `stty` could not be executed; access the Console directly */
 		use_stty = 0;
 	}
-
-	if (save_term(flags) < 0)
-		return -1;
 
 	if (!SetConsoleMode(hconin, cmode_in & ~bits)) {
 		CloseHandle(hconin);
@@ -396,7 +397,7 @@ static int mingw_getchar(void)
 	DWORD read = 0;
 	unsigned char ch;
 
-	if (!ReadFile(GetStdHandle(STD_INPUT_HANDLE), &ch, 1, &read, NULL))
+	if (!ReadFile(hconin, &ch, 1, &read, NULL))
 		return EOF;
 
 	if (!read) {
@@ -410,7 +411,10 @@ static int mingw_getchar(void)
 
 static int getchar_with_timeout(int timeout)
 {
-	struct pollfd pfd = { .fd = 0, .events = POLLIN };
+	struct pollfd pfd;
+
+	pfd.fd = term_fd;
+	pfd.events = POLLIN;
 
 	if (poll(&pfd, 1, timeout) < 1)
 		return EOF;
@@ -473,6 +477,7 @@ ret:
 #define FORCE_TEXT
 #endif
 
+#undef fopen
 char *git_terminal_prompt(const char *prompt, int echo)
 {
 	static struct strbuf buf = STRBUF_INIT;
@@ -481,10 +486,11 @@ char *git_terminal_prompt(const char *prompt, int echo)
 
 #ifdef GIT_WINDOWS_NATIVE
 
-	/* try shell_prompt first, fall back to CONIN/OUT if bash is missing */
-	char *result = shell_prompt(prompt, echo);
-	if (result)
-		return result;
+	/* try shell_prompt first, fall back to CONIN/OUT if MinGW bash is missing */
+	if (GetEnvironmentVariable("MINGW_PREFIX", NULL, 0)) {
+		char *result = shell_prompt(prompt, echo);
+			return result;
+	}
 
 #endif
 
@@ -498,7 +504,7 @@ char *git_terminal_prompt(const char *prompt, int echo)
 		return NULL;
 	}
 
-	if (!echo && disable_echo(0)) {
+	if (!echo && disable_echo(SAVE_TERM_DUPLEX)) {
 		fclose(input_fh);
 		fclose(output_fh);
 		return NULL;
@@ -511,9 +517,9 @@ char *git_terminal_prompt(const char *prompt, int echo)
 	if (!echo) {
 		putc('\n', output_fh);
 		fflush(output_fh);
+		restore_term();
 	}
 
-	restore_term();
 	fclose(input_fh);
 	fclose(output_fh);
 
