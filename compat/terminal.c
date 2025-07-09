@@ -43,6 +43,7 @@ static void print_background_resume_msg(int signo)
 	struct sigaction old_sa;
 	struct sigaction sa = { .sa_handler = SIG_DFL };
 
+	sigemptyset(&sa.sa_mask);
 	ttou_received = 1;
 	write_err(background_resume_msg);
 	sigaction(signo, &sa, &old_sa);
@@ -66,6 +67,7 @@ static void restore_terminal_on_suspend(int signo)
 	struct sigaction sa = { .sa_handler = SIG_DFL };
 	int can_restore = 1;
 
+	sigemptyset(&sa.sa_mask);
 	if (tcgetattr(term_fd, &t) < 0)
 		can_restore = 0;
 
