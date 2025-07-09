@@ -4,7 +4,6 @@
 #include "sigchain.h"
 #include "strbuf.h"
 #include "run-command.h"
-#include "string-list.h"
 #include "hashmap.h"
 
 #if defined(HAVE_DEV_TTY) || defined(GIT_WINDOWS_NATIVE)
@@ -250,28 +249,12 @@ static int getchar_with_timeout(int timeout)
 #define OUTPUT_PATH "CONOUT$"
 #define FORCE_TEXT "t"
 
-static int use_stty = 1;
-static struct string_list stty_restore = STRING_LIST_INIT_DUP;
 static HANDLE hconin = INVALID_HANDLE_VALUE;
 static HANDLE hconout = INVALID_HANDLE_VALUE;
 static DWORD cmode_in, cmode_out;
 
 void restore_term(void)
 {
-	if (use_stty) {
-		struct child_process cp = CHILD_PROCESS_INIT;
-
-		if (stty_restore.nr == 0)
-			return;
-
-		strvec_push(&cp.args, "stty");
-		for (size_t i = 0; i < stty_restore.nr; i++)
-			strvec_push(&cp.args, stty_restore.items[i].string);
-		run_command(&cp);
-		string_list_clear(&stty_restore, 0);
-		return;
-	}
-
 	sigchain_pop_common();
 
 	if (hconin == INVALID_HANDLE_VALUE)
@@ -307,7 +290,6 @@ int save_term(enum save_term_flags flags)
 	}
 
 	GetConsoleMode(hconin, &cmode_in);
-	use_stty = 0;
 	sigchain_push_common(restore_term_on_signal);
 	return 0;
 error:
@@ -318,41 +300,6 @@ error:
 
 static int disable_bits(enum save_term_flags flags, DWORD bits)
 {
-	if (use_stty) {
-		struct child_process cp = CHILD_PROCESS_INIT;
-
-		strvec_push(&cp.args, "stty");
-
-		if (bits & ENABLE_LINE_INPUT) {
-			string_list_append(&stty_restore, "icanon");
-			/*
-			 * POSIX allows VMIN and VTIME to overlap with VEOF and
-			 * VEOL - let's hope that is not the case on windows.
-			 */
-			strvec_pushl(&cp.args, "-icanon", "min", "1", "time", "0", NULL);
-		}
-
-		if (bits & ENABLE_ECHO_INPUT) {
-			string_list_append(&stty_restore, "echo");
-			strvec_push(&cp.args, "-echo");
-		}
-
-		if (bits & ENABLE_PROCESSED_INPUT) {
-			string_list_append(&stty_restore, "-ignbrk");
-			string_list_append(&stty_restore, "intr");
-			string_list_append(&stty_restore, "^c");
-			strvec_push(&cp.args, "ignbrk");
-			strvec_push(&cp.args, "intr");
-			strvec_push(&cp.args, "");
-		}
-
-		if (run_command(&cp) == 0)
-			return 0;
-
-		/* `stty` could not be executed; access the Console directly */
-		use_stty = 0;
-	}
-
 	if (save_term(flags) < 0)
 		return -1;
 
