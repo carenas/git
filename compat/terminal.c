@@ -136,9 +136,9 @@ void restore_term(void)
 	if (term_fd < 0)
 		return;
 
+	sigchain_pop_common();
 	tcsetattr(term_fd, TCSAFLUSH, &old_term);
 	close_term();
-	sigchain_pop_common();
 	reset_job_signals();
 }
 
@@ -270,11 +270,10 @@ static void close_term(void)
 
 void restore_term(void)
 {
-	sigchain_pop_common();
-
 	if (hconin == INVALID_HANDLE_VALUE)
 		return;
 
+	sigchain_pop_common();
 	if (hconout != INVALID_HANDLE_VALUE)
 		SetConsoleMode(hconout, cmode_out);
 
