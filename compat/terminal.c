@@ -8,6 +8,8 @@
 
 #if defined(HAVE_DEV_TTY) || defined(GIT_WINDOWS_NATIVE)
 
+static volatile sig_atomic_t term_needs_closing;
+
 static void restore_term_on_signal(int sig)
 {
 	restore_term();
@@ -20,7 +22,6 @@ static void restore_term_on_signal(int sig)
 #define INPUT_PATH "/dev/tty"
 #define OUTPUT_PATH "/dev/tty"
 
-static volatile sig_atomic_t term_fd_needs_closing;
 static int term_fd = -1;
 static struct termios old_term;
 
@@ -122,11 +123,11 @@ static void reset_job_signals(void)
 	}
 }
 
-static void close_term_fd(void)
+static void close_term(void)
 {
-	if (term_fd_needs_closing)
+	if (term_needs_closing)
 		close(term_fd);
-	term_fd_needs_closing = 0;
+	term_needs_closing = 0;
 	term_fd = -1;
 }
 
@@ -136,7 +137,7 @@ void restore_term(void)
 		return;
 
 	tcsetattr(term_fd, TCSAFLUSH, &old_term);
-	close_term_fd();
+	close_term();
 	sigchain_pop_common();
 	reset_job_signals();
 }
@@ -151,9 +152,9 @@ int save_term(enum save_term_flags flags)
 			   : open("/dev/tty", O_RDWR));
 	if (term_fd < 0)
 		return -1;
-	term_fd_needs_closing = !(flags & SAVE_TERM_STDIN);
+	term_needs_closing = (flags == SAVE_TERM_DUPLEX);
 	if (tcgetattr(term_fd, &old_term) < 0) {
-		close_term_fd();
+		close_term();
 		return -1;
 	}
 	sigchain_push_common(restore_term_on_signal);
@@ -200,7 +201,7 @@ static int disable_bits(enum save_term_flags flags, tcflag_t bits)
 
 	sigchain_pop_common();
 	reset_job_signals();
-	close_term_fd();
+	close_term();
 	return -1;
 }
 
@@ -255,6 +256,18 @@ static HANDLE hconin = INVALID_HANDLE_VALUE;
 static HANDLE hconout = INVALID_HANDLE_VALUE;
 static DWORD cmode_in, cmode_out;
 
+static void close_term(void)
+{
+	if (hconout != INVALID_HANDLE_VALUE)
+		CloseHandle(hconout);
+
+	if (term_needs_closing)
+		CloseHandle(hconin);
+
+	term_needs_closing = 0;
+	hconin = hconout = INVALID_HANDLE_VALUE;
+}
+
 void restore_term(void)
 {
 	sigchain_pop_common();
@@ -262,40 +275,41 @@ void restore_term(void)
 	if (hconin == INVALID_HANDLE_VALUE)
 		return;
 
-	SetConsoleMode(hconin, cmode_in);
-	CloseHandle(hconin);
-	if (hconout != INVALID_HANDLE_VALUE) {
+	if (hconout != INVALID_HANDLE_VALUE)
 		SetConsoleMode(hconout, cmode_out);
-		CloseHandle(hconout);
-	}
 
-	hconin = hconout = INVALID_HANDLE_VALUE;
+	SetConsoleMode(hconin, cmode_in);
+	close_term();
 }
 
 int save_term(enum save_term_flags flags)
 {
-	hconin = CreateFileA("CONIN$", GENERIC_READ | GENERIC_WRITE,
-	    FILE_SHARE_READ, NULL, OPEN_EXISTING,
-	    FILE_ATTRIBUTE_NORMAL, NULL);
-	if (hconin == INVALID_HANDLE_VALUE)
-		return -1;
+	term_needs_closing = (flags == SAVE_TERM_DUPLEX);
 
-	if (flags & SAVE_TERM_DUPLEX) {
+	if (flags & SAVE_TERM_STDIN) {
+		hconin = GetStdHandle(STD_INPUT_HANDLE);
+	} else {
+		hconin = CreateFileA("CONIN$", GENERIC_READ | GENERIC_WRITE,
+				     FILE_SHARE_READ, NULL, OPEN_EXISTING,
+				     FILE_ATTRIBUTE_NORMAL, NULL);
+		if (hconin == INVALID_HANDLE_VALUE)
+			return -1;
+
 		hconout = CreateFileA("CONOUT$", GENERIC_READ | GENERIC_WRITE,
-			FILE_SHARE_WRITE, NULL, OPEN_EXISTING,
-			FILE_ATTRIBUTE_NORMAL, NULL);
+				      FILE_SHARE_WRITE, NULL, OPEN_EXISTING,
+				      FILE_ATTRIBUTE_NORMAL, NULL);
 		if (hconout == INVALID_HANDLE_VALUE)
 			goto error;
 
 		GetConsoleMode(hconout, &cmode_out);
 	}
 
-	GetConsoleMode(hconin, &cmode_in);
+	if (!GetConsoleMode(hconin, &cmode_in))
+		goto error;
 	sigchain_push_common(restore_term_on_signal);
 	return 0;
 error:
-	CloseHandle(hconin);
-	hconin = INVALID_HANDLE_VALUE;
+	close_term();
 	return -1;
 }
 
@@ -305,8 +319,7 @@ static int disable_bits(enum save_term_flags flags, DWORD bits)
 		return -1;
 
 	if (!SetConsoleMode(hconin, cmode_in & ~bits)) {
-		CloseHandle(hconin);
-		hconin = INVALID_HANDLE_VALUE;
+		close_term();
 		sigchain_pop_common();
 		return -1;
 	}
@@ -344,7 +357,7 @@ static int mingw_getchar(void)
 	DWORD read = 0;
 	unsigned char ch;
 
-	if (!ReadFile(GetStdHandle(STD_INPUT_HANDLE), &ch, 1, &read, NULL))
+	if (!ReadFile(hconin, &ch, 1, &read, NULL))
 		return EOF;
 
 	if (!read) {
@@ -388,7 +401,7 @@ char *git_terminal_prompt(const char *prompt, int echo)
 		return NULL;
 	}
 
-	if (!echo && disable_echo(0)) {
+	if (!echo && disable_echo(SAVE_TERM_DUPLEX)) {
 		fclose(input_fh);
 		fclose(output_fh);
 		return NULL;
