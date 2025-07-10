@@ -644,6 +644,9 @@ void winansi_init(void)
 	if (hread == INVALID_HANDLE_VALUE)
 		die_lasterr("CreateFile for named pipe failed");
 
+	SetConsoleCP(CP_UTF8);
+	SetConsoleOutputCP(CP_UTF8);
+
 	/* start console spool thread on the pipe's read end */
 	hthread = CreateThread(NULL, 0, console_thread, NULL, 0, NULL);
 	if (!hthread)
