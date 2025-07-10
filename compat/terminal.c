@@ -250,7 +250,7 @@ static int getchar_with_timeout(int timeout)
 
 #define INPUT_PATH "CONIN$"
 #define OUTPUT_PATH "CONOUT$"
-#define FORCE_TEXT "t"
+#define FORCE_BINARY "b"
 
 static HANDLE hconin = INVALID_HANDLE_VALUE;
 static HANDLE hconout = INVALID_HANDLE_VALUE;
@@ -380,21 +380,22 @@ static int getchar_with_timeout(int timeout)
 
 #endif
 
-#ifndef FORCE_TEXT
-#define FORCE_TEXT
+#ifndef FORCE_BINARY
+#define FORCE_BINARY
 #endif
 
+#undef fopen
 char *git_terminal_prompt(const char *prompt, int echo)
 {
 	static struct strbuf buf = STRBUF_INIT;
 	int r;
 	FILE *input_fh, *output_fh;
 
-	input_fh = fopen(INPUT_PATH, "r" FORCE_TEXT);
+	input_fh = fopen(INPUT_PATH, "r" FORCE_BINARY);
 	if (!input_fh)
 		return NULL;
 
-	output_fh = fopen(OUTPUT_PATH, "w" FORCE_TEXT);
+	output_fh = fopen(OUTPUT_PATH, "w" FORCE_BINARY);
 	if (!output_fh) {
 		fclose(input_fh);
 		return NULL;
@@ -409,7 +410,7 @@ char *git_terminal_prompt(const char *prompt, int echo)
 	fputs(prompt, output_fh);
 	fflush(output_fh);
 
-	r = strbuf_getline_lf(&buf, input_fh);
+	r = strbuf_getline(&buf, input_fh);
 	if (!echo) {
 		putc('\n', output_fh);
 		fflush(output_fh);
